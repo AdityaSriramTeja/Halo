@@ -1,36 +1,91 @@
-import { Menu, Mic, MicOff, Paperclip } from "lucide-react";
+import {
+  CheckCircle2,
+  Loader2,
+  AlertCircle,
+  FileText,
+  Brain,
+} from "lucide-react";
 import SiriOrb from "./components/smoothui/ui/SiriOrb";
-import { Button } from "./components/ui/button";
-import { ScrollArea } from "./components/ui/scroll-area";
 import { FlipWords } from "./components/ui/flip-words";
 import { useState, useEffect } from "react";
-import { AnimatePresence } from "motion/react";
-import DropdownPage from "./DropdownPage";
-import {
-  getAvailableFunctions,
-  routeFunction,
-  FunctionName,
-} from "./api/functionRouter";
+import { AnimatePresence, motion } from "motion/react";
+import { MainFooter } from "./components/layout";
+import { QuizOverlay } from "./components/quiz";
+import { GeneratedQuiz } from "./types/quiz";
+import { Card } from "./components/ui/card";
+import { ScrollArea } from "./components/ui/scroll-area";
 
 function App() {
-  const [isMicOn, setIsMicOn] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [outputText, setOutputText] = useState(
-    'I can help you discover new contacts, draft concise emails, summarize long message threads, extract key phone numbers, schedule follow‑ups, and even remember contextual details like where you met someone or what project they mentioned last week. Just ask something natural like "find designers in my recent imports," "summarize my last three calls," "add Priya Sharma to a follow‑up list," or "compose a friendly intro for a potential collaborator." I\'ll continuously refine suggestions as you speak or type, and you can interrupt me at any time with a new request. If you want to pivot, try asking for related people, shared companies, missing info gaps, or enrichment data. Ready whenever you are—go ahead and give me something to do.',
-  );
+  const [isFocusOn, setIsFocusOn] = useState(false);
+  const [outputText, setOutputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedFunction, setSelectedFunction] = useState<FunctionName | null>(
-    null,
-  );
+  const [quizData, setQuizData] = useState<GeneratedQuiz | null>(null);
 
-  // Get words from the function metadata
-  const words = getAvailableFunctions().map((fn) => fn.label);
+  // Feature labels for the flip words animation
+  const words = [
+    "Simplify Complex Text",
+    "Generate Reading Quizzes",
+    "Enable Focus Mode",
+    "Transform Websites",
+    "Practice Language Skills",
+  ];
+
+  const parseOutputText = (text: string) => {
+    const lines = text.split("\n").filter((line) => line.trim());
+    const items: Array<{
+      icon: any;
+      text: string;
+      type: "success" | "info" | "error";
+    }> = [];
+
+    lines.forEach((line) => {
+      if (
+        line.toLowerCase().includes("success") ||
+        line.toLowerCase().includes("complete") ||
+        line.toLowerCase().includes("ready")
+      ) {
+        items.push({
+          icon: CheckCircle2,
+          text: line.trim(),
+          type: "success",
+        });
+      } else if (
+        line.toLowerCase().includes("initializing") ||
+        line.toLowerCase().includes("creating") ||
+        line.toLowerCase().includes("processing") ||
+        line.toLowerCase().includes("analyzing")
+      ) {
+        items.push({
+          icon: Brain,
+          text: line.trim(),
+          type: "info",
+        });
+      } else if (
+        line.toLowerCase().includes("error") ||
+        line.toLowerCase().includes("failed")
+      ) {
+        items.push({
+          icon: AlertCircle,
+          text: line.trim(),
+          type: "error",
+        });
+      } else if (line.trim()) {
+        items.push({
+          icon: FileText,
+          text: line.trim(),
+          type: "info",
+        });
+      }
+    });
+
+    return items;
+  };
 
   useEffect(() => {
     // Listen for keyboard shortcut from service worker
     const handleMessage = (message: { type: string }) => {
       if (message.type === "TOGGLE_MIC") {
-        setIsMicOn((prev) => !prev);
+        setIsFocusOn((prev) => !prev);
       }
     };
 
@@ -38,251 +93,160 @@ function App() {
       chrome.runtime.onMessage.addListener(handleMessage);
     }
 
-    // Listen for Ctrl+Shift+Q in the panel itself
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.shiftKey && event.key === "Q") {
         event.preventDefault();
-        setIsMicOn((prev) => !prev);
+        setIsFocusOn((prev) => !prev);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
 
+    const handleTabChange = async () => {
+      if (isFocusOn) {
+        console.log("Tab changed, disabling focus mode");
+
+        try {
+          const tabs = await chrome.tabs.query({});
+          for (const tab of tabs) {
+            if (tab.id) {
+              chrome.tabs.sendMessage(
+                tab.id,
+                { type: "TOGGLE_FOCUS_MODE", enabled: false },
+                () => {
+                  if (chrome.runtime.lastError) {
+                  }
+                }
+              );
+            }
+          }
+        } catch (error) {
+          console.error("Error disabling focus mode on tab change:", error);
+        }
+
+        setIsFocusOn(false);
+      }
+    };
+
+    if (typeof chrome !== "undefined" && chrome.tabs) {
+      chrome.tabs.onActivated.addListener(handleTabChange);
+    }
+
     return () => {
       if (typeof chrome !== "undefined" && chrome.runtime) {
         chrome.runtime.onMessage.removeListener(handleMessage);
       }
+      if (typeof chrome !== "undefined" && chrome.tabs) {
+        chrome.tabs.onActivated.removeListener(handleTabChange);
+      }
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [isFocusOn]);
 
-  const toggleMic = () => {
-    setIsMicOn((prev) => !prev);
-  };
-
-  const handleKeyboardClick = async () => {
-    // Get all available functions
-    const availableFunctions = getAvailableFunctions();
-
-    // Randomly select one
-    const randomIndex = 3;
-    const selectedFunc = availableFunctions[randomIndex];
-
-    setIsLoading(true);
-    setOutputText(`🎯 Testing feature: ${selectedFunc.label}\n\nProcessing...`);
-
-    try {
-      // Check if this function needs dropdown
-      if (
-        selectedFunc.name === "postToSocials" ||
-        selectedFunc.name === "replyToEmails" ||
-        selectedFunc.name === "generateQuizzes"
-      ) {
-        // Open dropdown with the selected function
-        setSelectedFunction(selectedFunc.name);
-        setIsDropdownOpen(true);
-        setOutputText(
-          `✨ ${selectedFunc.label} requires additional input. Opening form...`,
-        );
-      } else {
-        // Execute the function immediately with mock parameters
-        const mockParams = getMockParams(selectedFunc.name);
-        const result = await routeFunction({
-          functionName: selectedFunc.name,
-          params: mockParams,
-        });
-
-        // Format and display the result
-        const formattedResult = formatResult(selectedFunc.name, result);
-        setOutputText(formattedResult);
-      }
-    } catch (error) {
-      setOutputText(
-        `❌ Error testing ${selectedFunc.label}: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const getMockParams = (
-    functionName: FunctionName,
-  ): Record<string, unknown> => {
-    switch (functionName) {
-      case "summarizeWebsite":
-        return { url: "https://example.com", length: "medium" };
-      case "translateInstantly":
-        return {
-          text: "Hello, how are you?",
-          targetLanguage: "Spanish",
-        };
-      case "wishlistFromYouTube":
-        return { videoUrl: "https://youtube.com/watch?v=example" };
-      case "transformWebsites":
-        return {
-          url: "https://example.com",
-          format: "markdown",
-          includeImages: false,
-        };
-      default:
-        return {};
-    }
-  };
-
-  const formatResult = (
-    functionName: FunctionName,
-    result: unknown,
-  ): string => {
-    const res = result as Record<string, unknown>;
-
-    if (!res.success) {
-      return `❌ Failed: ${res.error || "Unknown error"}`;
-    }
-
-    let output = `✅ Successfully executed: ${functionName}\n\n`;
-
-    switch (functionName) {
-      case "summarizeWebsite":
-        output += `📄 Summary:\n${res.summary}\n\n`;
-        if (res.keyPoints && Array.isArray(res.keyPoints)) {
-          output += "🔑 Key Points:\n";
-          res.keyPoints.forEach((point: string) => {
-            output += `• ${point}\n`;
-          });
-        }
-        break;
-      case "translateInstantly":
-        output += `🌍 Translated Text:\n${res.translatedText}\n\n`;
-        output += `Detected Language: ${res.detectedLanguage}`;
-        break;
-      case "wishlistFromYouTube":
-        output += `📺 Video: ${res.videoTitle}\n\n`;
-        output += "🛒 Wishlist Items:\n";
-        if (res.items && Array.isArray(res.items)) {
-          res.items.forEach(
-            (item: { name: string; timestamp?: string; price?: string }) => {
-              output += `• ${item.name}`;
-              if (item.timestamp) output += ` (${item.timestamp})`;
-              if (item.price) output += ` - ${item.price}`;
-              output += "\n";
-            },
-          );
-        }
-        break;
-      case "transformWebsites":
-        output += `🔄 Format: ${res.format}\n\n`;
-        if (res.content) {
-          output += `Content Preview:\n${String(res.content).substring(
-            0,
-            200,
-          )}...`;
-        }
-        break;
-      default:
-        output += JSON.stringify(res, null, 2);
-    }
-
-    return output;
+  const toggleFocus = () => {
+    setIsFocusOn((prev) => !prev);
   };
 
   return (
-    <div className="flex flex-col h-screen px-4 py-4 overflow-hidden relative">
-      {/* Dropdown Menu with Animation */}
+    <div className="flex flex-col h-screen overflow-hidden p-5">
       <AnimatePresence>
-        {isDropdownOpen && (
-          <DropdownPage
-            onClose={() => {
-              setIsDropdownOpen(false);
-              setSelectedFunction(null);
-            }}
-            initialFunction={selectedFunction}
-          />
+        {quizData && (
+          <QuizOverlay quiz={quizData} onClose={() => setQuizData(null)} />
         )}
       </AnimatePresence>
 
-      {/* header */}
-      {/* Attachments slim header */}
-      <div className="h-8 w-full flex justify-center items-center mb-2">
-        <span className="px-3 py-1 rounded-full bg-secondary/80 flex items-center text-xs text-white/80 font-medium shadow-sm border border-secondary/40">
-          <span className="inline-block align-middle mr-1.5">
-            <Paperclip size={15} />
-          </span>{" "}
-          Attachments: pasted image
-        </span>
-      </div>
-      {/* Top space for aesthetic padding */}
-      <div className="flex-1 flex flex-col items-center justify-center">
-        {/* Animated actions (FlipWords) */}
-        {/* Header */}
-        <div className="text-4xl font-semibold text-center  mb-5 text-white drop-shadow-lg px-5">
-          What Can I Do for You Today?
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6">
+        {/* Simple Brand */}
+        <div className="text-center space-y-5 mb-10">
+          <h1 className="text-4xl font-medium text-white/90 tracking-wide">
+            Halo
+          </h1>
+          <p className="text-xs ">
+            <FlipWords words={words} />
+          </p>
         </div>
-        <div className="text-sm text-muted-foreground mb-16 mt-2 opacity-80 ">
-          <FlipWords words={words} />
-        </div>
-        {/* Siri Orb */}
-        <div className="flex justify-center items-center mb-20">
-          <SiriOrb
-            size={"160px"}
-            animationDuration={20}
-            className="drop-shadow-2xl "
-          />
-        </div>
-        {/* Animated Output (scrollable, shadcn ScrollArea) now under the orb */}
-        <div className="relative w-full max-w-xl mb-10 ">
-          <ScrollArea
-            className="rounded-xl px-8 py-3 text-white text-center h-40 w-full animate-fade-in flex flex-col gap-1 shadow-lg backdrop-blur-sm text-md "
-            style={{
-              lineHeight: "1.4",
-              maskImage:
-                "linear-gradient(to bottom, transparent, black 2.5rem, black calc(100% - 2.5rem), transparent)",
-              WebkitMaskImage:
-                "linear-gradient(to bottom, transparent, black 2.5rem, black calc(100% - 2.5rem), transparent)",
-            }}
-          >
-            {/* Dynamic output text */}
-            <p
-              className={isLoading ? "opacity-60" : ""}
-              style={{ whiteSpace: "pre-wrap" }}
-            >
-              {outputText}
-            </p>
-          </ScrollArea>
-        </div>
-      </div>
-      {/* Controls at the bottom with Quick Actions in between */}
-      <div className="flex items-center justify-between px-5 w-full max-w-2xl mx-auto mb-2 gap-x-5">
-        <Button
-          variant="outline"
-          className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow border border-gray-300 hover:bg-gray-100 transition-all duration-200 bg-black/30 backdrop-blur"
-        >
-          <Menu size={28} />
-        </Button>
-        {/* Quick Actions in between controls */}
-        <div
-          onClick={handleKeyboardClick}
-          className={`bg-secondary flex-1 h-14 rounded-full flex items-center justify-center mx-2 px-4 min-w-[120px] backdrop-blur cursor-pointer hover:bg-secondary/80 transition-all duration-200 active:scale-95 ${
-            isLoading ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-        >
-          <span className="text-white/80 text-base">
-            {isLoading ? "Testing..." : "Use Keyboard"}
-          </span>
-        </div>
-        <Button
-          variant={isMicOn ? "outline" : "destructive"}
-          onClick={toggleMic}
-          className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow border transition-all duration-200 backdrop-blur`}
-        >
-          {isMicOn ? (
-            <Mic size={28} />
-          ) : (
-            <MicOff size={28} className="text-white" />
+
+        {/* Orb */}
+        <div className="relative mb-8">
+          <SiriOrb size={"120px"} animationDuration={20} />
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-white/60 animate-spin" />
+            </div>
           )}
-        </Button>
+        </div>
+
+        {/* Output */}
+        <div className="w-full max-w-md text-muted-foreground">
+          <AnimatePresence mode="wait">
+            {outputText && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <Card className="bg-background backdrop-blur border-0">
+                  <ScrollArea className="h-64">
+                    <div className="p-4 space-y-3">
+                      {parseOutputText(outputText).map((item, index) => (
+                        <div key={index} className="flex items-center gap-3">
+                          <div
+                            className={`p-1.5 rounded-lg flex-shrink-0 ${
+                              item.type === "success"
+                                ? "bg-green-500/10"
+                                : item.type === "error"
+                                ? "bg-red-500/10"
+                                : "bg-blue-500/10"
+                            }`}
+                          >
+                            <item.icon
+                              className={`w-3.5 h-3.5 ${
+                                item.type === "success"
+                                  ? "text-green-400"
+                                  : item.type === "error"
+                                  ? "text-red-400"
+                                  : "text-blue-400"
+                              }`}
+                            />
+                          </div>
+                          <p
+                            className={`text-xs leading-relaxed ${
+                              item.type === "success"
+                                ? "text-green-100/90"
+                                : item.type === "error"
+                                ? "text-red-100/90"
+                                : "text-white/70"
+                            }`}
+                          >
+                            {item.text}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </Card>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Empty State */}
+          {!outputText && !isLoading && (
+            <div className="text-center mt-5">
+              <p className="text-xs text-white/30">Select a tool below</p>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Footer */}
+      <MainFooter
+        isMicOn={isFocusOn}
+        toggleMic={toggleFocus}
+        setOutputText={setOutputText}
+        setIsLoading={setIsLoading}
+        setQuizData={setQuizData}
+      />
     </div>
   );
 }

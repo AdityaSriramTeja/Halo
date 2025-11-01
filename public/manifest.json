@@ -1,53 +1,54 @@
 {
-    "manifest_version": 3,
-    "version": "1.0.0",
-    "name": "Halo",
-    "icons": {
-        "128": "vite.svg"
+  "manifest_version": 3,
+  "version": "1.0.0",
+  "name": "Halo",
+
+  "icons": {
+    "128": "vite.svg"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "commands",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "action": {},
+  "commands": {
+    "_execute_action": {
+      "description": "Shortcut for execute extension",
+      "suggested_key": {
+        "default": "Ctrl+Shift+Z"
+      }
     },
-    "side_panel": {
-        "default_path": "index.html"
-    },
-    "permissions": [
-        "sidePanel",
-        "activeTab",
-        "scripting",
-        "declarativeNetRequest",
-        "declarativeNetRequestFeedback",
-        "commands",
-        "storage"
-    ],
-    "background": {
-        "service_worker": "service_worker.js",
-        "type": "module"
-    },
-    "action": {},
-    "commands": {
-        "_execute_action": {
-            "description": "Shortcut for execute extension",
-            "suggested_key": {
-                "default": "Ctrl+Shift+Z"
-            }
-        },
-        "toggle-mic": {
-            "suggested_key": {
-                "default": "Ctrl+Shift+Q"
-            },
-            "description": "Toggle microphone"
-        }
-    },
-    "host_permissions": [
-        "http://*/*",
-        "https://*/*"
-    ],
-    "web_accessible_resources": [
-        {
-            "resources": [
-                "contentStyle.css",
-                "vite.svg",
-                "icon-34.png"
-            ],
-            "matches": []
-        }
-    ]
+    "toggle-mic": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Q"
+      },
+      "description": "Toggle microphone"
+    }
+  },
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["focus-mode.js", "transform-website.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["contentStyle.css", "vite.svg", "icon-34.png"],
+      "matches": []
+    }
+  ]
 }
